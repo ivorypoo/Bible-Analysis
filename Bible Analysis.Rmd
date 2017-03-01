@@ -1,0 +1,230 @@
+---
+title: "A Homework of Biblical Proportions"
+author: "Ivory Poo"
+output: html_document
+---
+In this HW, we will analyze the text of the bible. The ascii version resides in the file "ascii_bible.txt" on Camino. Use an editor to familiarize yourself with the structure of the file. Then perform the following operations, listed below as questions for you to answer. 
+
+## Q1: Read in the file using any R function you like and store each verse in a text array. After which print the top 20 verses. (Remove the top two lines which contain the title.)
+```{r}
+setwd("~/Desktop/Machine Learning")
+library(stringr)
+bible<-readLines("data_files/ascii_bible.txt")
+bible <- gsub( "        ", " ", bible)
+bible <- Filter(function(x) !any(grepl("Book ", x)), bible)
+bible <- paste(bible, collapse = "")
+bible <- unlist(strsplit(gsub("([[:digit:]]{3}:[[:digit:]]{3})", "~\\1", bible), "~"))
+text <- bible[bible!= ""]
+
+```
+
+
+## Q2: How many verses are there in total? 
+
+Answer: There are 31102 verses.
+```{r}
+length(text)
+```
+
+## Q3: Each verse has the number "CCC:VVV" where CCC is the chapter number and VVV is the verse number. How many chapters are there? 
+
+Answer: They are 1189 chapters.
+```{r}
+number=substr(text, 1,7)
+temp1=strsplit(number, ":")
+df<-matrix(unlist(temp1), ncol = 2, byrow = TRUE)
+df<-as.data.frame(df)
+sum(df$V2=="001")
+```
+
+
+## Q4: Extract an array for the verse numbers, and also one for the verse text.
+```{r}
+verse_text=substr(text, 9,str_length(text))
+verse_number=df$V2
+```
+
+
+## Q5: Lower case all text.
+```{r}
+verse_text_lower=tolower(verse_text)
+```
+
+
+## Q6: Convert the text of all verses into a Corpus using the **tm** package. 
+```{r}
+library(tm)
+text_corpus_lower = Corpus(VectorSource(verse_text_lower))
+```
+
+## Q7: Remove all punctuation. Use a corpus function for this. How many unique words are there in the bible? 
+
+Answer: They are 12651 unique words.
+```{r}
+text_corpus_nopunc = tm_map(text_corpus_lower,removePunctuation)
+#text_corpus[[2]]$content
+tdm_nopunc = TermDocumentMatrix(text_corpus_nopunc,control=list(minWordLength=1))
+
+```
+
+
+## Q8: Remove all stopwords. Now how many unique terms are there?
+
+Answer: They are 12555 unique words.
+```{r}
+text_corpus_nostops=tm_map(text_corpus_nopunc,removeWords,stopwords("english"))
+tdm_nostops = TermDocumentMatrix(text_corpus_nostops,control=list(minWordLength=1))
+print(lapply(text_corpus_nostops, as.character)[10:15])
+```
+
+
+## Q9: Now stem the text, to remove multiplicity of similar words of the same root. 
+```{r}
+#stemDocument
+text_corpus_stem = tm_map(text_corpus_nostops,stemDocument)
+#print(lapply(text_corpus_stem, as.character)[10:15])
+```
+
+
+## Q10: How many distinct words are there in the bible, after stemming?
+
+Answer: There are 9125 distinct words after stemming.
+```{r}
+tdm_stem = TermDocumentMatrix(text_corpus_stem,control=list(minWordLength=1))
+tdm_stem
+```
+
+## Q11: Convert the TDM into a matrix and find the 50 most common words in the bible. 
+```{r}
+tdm_stem_matrix = as.matrix(tdm_stem)
+tdm_stem_wordcount = sort(rowSums(tdm_stem_matrix),decreasing=TRUE)
+tdm_stem_names = names(tdm_stem_wordcount)
+tdm_stem_names[1:50]
+```
+
+
+## Q12: Make a wordcloud of the top 100 words in the bible. 
+```{r}
+library(wordcloud)
+wordcloud(tdm_stem_names[1:50],tdm_stem_wordcount[1:50])
+```
+
+
+## Q13: Mood score the original text of the bible (before stemming)
+
+Answer: There are 561 positive match and 695 negative match.
+```{r}
+HIDict = readLines("data_files/inqdict.txt")
+dict_pos = HIDict[grep("Pos",HIDict)]
+poswords = NULL
+for (s in dict_pos) {
+    s = strsplit(s,"#")[[1]][1]
+    poswords = c(poswords,strsplit(s," ")[[1]][1])
+}
+dict_neg = HIDict[grep("Neg",HIDict)]
+negwords = NULL
+for (s in dict_neg) {
+    s = strsplit(s,"#")[[1]][1]
+    negwords = c(negwords,strsplit(s," ")[[1]][1])
+}
+poswords = tolower(poswords)
+negwords = tolower(negwords)
+
+text = NULL
+for (j in 1:length(text_corpus_nopunc)) {
+            temp = text_corpus_nopunc[[j]]$content
+            if (temp!="") { text = c(text,temp) }}
+text = as.array(text)
+text = paste(text,collapse="\n")
+text = str_replace_all(text, "[\r\n]" , " ")
+text = strsplit(unlist(text)," ")
+
+posmatch = match(text,poswords)
+numposmatch = length(posmatch[which(posmatch>0)])
+negmatch = match(text,negwords)
+numnegmatch = length(negmatch[which(negmatch>0)])
+print(c(numposmatch,numnegmatch))
+
+```
+
+
+## Q14: Summarize the bible into less than 500 verses. (Or some fraction of the total number of verses, it's your choice.) Be super careful here as this may take a long time unless you are clever about it, or find some elegant way to speed things up!
+```{r}
+text_summary = function(text, n) {
+  m = length(text)  # No of sentences in input
+  jaccard = matrix(0,m,m)  #Store match index
+  for (i in 1:m) {
+    for (j in i:m) {
+      a = text[i]; aa = unlist(strsplit(a," "))
+      b = text[j]; bb = unlist(strsplit(b," "))
+      jaccard[i,j] = length(intersect(aa,bb))/
+                          length(union(aa,bb))
+      jaccard[j,i] = jaccard[i,j]
+    }
+  }
+  similarity_score = rowSums(jaccard)
+  res = sort(similarity_score, index.return=TRUE,
+          decreasing=TRUE)
+  idx = res$ix[1:n]
+  summary = text[idx]
+}
+#Split the verse text into 200 lists evenly, 156 lines each list
+
+n <- length(verse_text)
+k <- n/200 
+split_verse_text<-split(verse_text, rep(1:ceiling(n/k), each=round(k)+1)[1:n])
+#Summarize each list into 25 lines
+res=list()
+for (i in (1:length(split_verse_text))){
+  res[[i]] = text_summary(split_verse_text[[i]],25)
+}
+
+#Combine the first summary 200X25=500 lines into one list then split it again evenly into 20 list, with 25 lines in each list
+
+res_combined=unlist(res)
+n <- length(res_combined)#length(verse_text)
+k <- n/20 ## your LEN
+split_res_combined<-split(res_combined, rep(1:ceiling(n/k), each=round(k))[1:n])
+#Summarize each list into 24 lines, so the final result will have 480 verses
+res1=list()
+for (i in (1:length(split_res_combined))){
+  res1[[i]] = text_summary(split_res_combined[[i]],24)
+}
+final_summary=unlist(res1)
+
+head(final_summary,3)
+```
+
+
+## Q15: Find the main 3 topics in the bible, and the top 25 words in each topic. Can you find an interpretation of each topic?
+
+Answer:
+First topic: Important People.
+Second topic: Offerings.
+Third topic: Commandments.
+```{r}
+library(text2vec)
+library(magrittr)
+library(tm)
+stopw = stopwords('en')
+stopw = c(stopw,"also","shall","us","thee","let","o","shalt","therefore","will","may", "thou","thy", "ye","may","every","even", "s", "unto", "said","saying","thus", "upon","hath")
+head(verse_text_lower)
+tokens = verse_text_lower %>% word_tokenizer()
+it = itoken(tokens)
+v = create_vocabulary(it, stopwords = stopw) %>% prune_vocabulary(term_count_min=5)
+vectrzr = vocab_vectorizer(v, grow_dtm = TRUE, skip_grams_window = 5)
+dtm = create_dtm(it, vectrzr)
+print(dim(dtm))
+#Do LDA
+lda = LatentDirichletAllocation$new(n_topics=3, v)
+lda$fit(dtm,n_iter = 25)
+doc_topics = lda$fit_transform(dtm,n_iter = 25)
+print(dim(doc_topics))
+#Get word vectors by topic
+topic_wv = lda$get_word_vectors()
+print(dim(topic_wv))
+library(LDAvis)
+lda$plot()
+
+```
+
